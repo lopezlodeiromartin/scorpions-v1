@@ -7,6 +7,20 @@ from PyPDF2 import PdfReader
 import pandas as pd
 import re
 
+from sentence_transformers import SentenceTransformer
+import chromadb
+
+#modelo IA
+
+modelo_ia = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+coleccion_vectores = chroma_client.get_or_create_collection(
+    name="documentos", 
+    metadata={"hnsw:space": "cosine"}
+)
+#==
+
 app = FastAPI(title="Hackathon Doc API")
 
 app.add_middleware(
@@ -98,12 +112,17 @@ async def upload_document(file: UploadFile = File(...)):
     )
     doc_id = cursor.lastrowid
 
-    palabras_a_indexar = limpiar_y_extraer_palabras(texto_extraido)
-    for palabra in palabras_a_indexar:
-        cursor.execute(
-            "INSERT INTO indice (palabra, documento_id) VALUES (?, ?)",
-            (palabra, doc_id)
-        )
+    # Generar el embedding con la IA (cortamos a 3000 caracteres para no saturar el modelo ligero)
+    texto_para_ia = texto_extraido[:3000] if texto_extraido else "documento vacio"
+    vector = modelo_ia.encode(texto_para_ia).tolist()
+
+    # Guardar en ChromaDB
+    coleccion_vectores.add(
+        embeddings=[vector],
+        documents=[texto_para_ia],
+        metadatas=[{"titulo": file.filename, "tipo": tipo, "id_sqlite": doc_id}],
+        ids=[str(doc_id)] # Usamos el ID de SQLite para vincularlos
+    )
 
     conn.commit()
     conn.close()
@@ -131,62 +150,50 @@ async def delete_document(doc_id: int):
     conn.commit()
     conn.close()
 
+    try:
+        coleccion_vectores.delete(ids=[str(doc_id)])
+    except Exception:
+        pass # Ignorar si no estaba en ChromaDB
+
     return {"mensaje": "Documento eliminado con éxito"}
 
 @app.get("/search/")
 async def search_documents(q: str = "", tipo: str = ""):
-    conn = sqlite3.connect("documentos.db")
-    cursor = conn.cursor()
-
     if not q.strip():
-        if tipo.strip():
-            cursor.execute("SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE tipo = ? ORDER BY id DESC", (tipo.lower(),))
-            resultados = cursor.fetchall()
-        else:
-            conn.close()
-            return {"total": 0, "resultados": []}
-    else:
-        palabras_busqueda = re.sub(r'[^\w\s]', '', q.lower()).split()
-        palabras_busqueda = [p for p in palabras_busqueda if len(p) > 3]
-        
-        sets_de_documentos = []
-        for palabra in palabras_busqueda:
-            cursor.execute("SELECT documento_id FROM indice WHERE palabra LIKE ?", (f"{palabra}%",))
-            doc_ids = set([fila[0] for fila in cursor.fetchall()])
-            sets_de_documentos.append(doc_ids)
+        return {"total": 0, "resultados": []}
+
+    # 1. Convertir la pregunta del usuario en un vector
+    vector_pregunta = modelo_ia.encode(q).tolist()
+
+    # 2. Configurar el filtro por tipo de archivo (si el usuario lo ha marcado)
+    where_clause = {"tipo": tipo.lower()} if tipo.strip() else None
+
+    # 3. Buscar en la base de datos vectorial
+    resultados_chroma = coleccion_vectores.query(
+        query_embeddings=[vector_pregunta],
+        n_results=10, # Traer los 10 documentos más relevantes
+        where=where_clause
+    )
+
+    docs = []
+    # ChromaDB devuelve listas dentro de listas, iteramos sobre los resultados
+    if resultados_chroma['ids'] and len(resultados_chroma['ids'][0]) > 0:
+        for i in range(len(resultados_chroma['ids'][0])):
+            doc_id = resultados_chroma['ids'][0][i]
+            metadata = resultados_chroma['metadatas'][0][i]
+            contenido = resultados_chroma['documents'][0][i]
+            distancia = resultados_chroma['distances'][0][i] # Qué tan cerca está (menor es mejor en coseno distance)
             
-        if not sets_de_documentos or not all(sets_de_documentos):
-            conn.close()
-            return {"total": 0, "resultados": []}
-            
-        ids_comunes = set.intersection(*sets_de_documentos)
-        if not ids_comunes:
-            conn.close()
-            return {"total": 0, "resultados": []}
+            porcentaje = max(0, 100 - (distancia * 50))
+            # Podrías filtrar por distancia si quisieras evitar resultados muy malos
+            if porcentaje > 60.0: 
+                docs.append({
+                    "id": metadata["id_sqlite"],
+                    "titulo": metadata["titulo"],
+                    "tipo": metadata["tipo"],
+                    "resumen": contenido[:150] + "..." if contenido else "Sin contenido extraíble"
+                })
 
-        placeholders = ",".join("?" * len(ids_comunes))
-        query = f"SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE id IN ({placeholders})"
-        parametros = list(ids_comunes)
-
-        if tipo.strip():
-            query += " AND tipo = ?"
-            parametros.append(tipo.lower())
-
-        cursor.execute(query, parametros)
-        resultados = cursor.fetchall()
-
-    conn.close()
-
-    docs = [
-        {
-            "id": r[0],
-            "titulo": r[1],
-            "tipo": r[2],
-            "ruta": r[3],
-            "resumen": r[4][:150] + "..." if r[4] else "Sin contenido extraíble"
-        }
-        for r in resultados
-    ]
     return {"total": len(docs), "resultados": docs}
 
 @app.get("/documents/")
