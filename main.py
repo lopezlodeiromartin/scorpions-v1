@@ -3,6 +3,7 @@ import sqlite3
 import os
 import shutil
 from PyPDF2 import PdfReader
+import re
 
 app = FastAPI(title="Hackathon Doc API")
 UPLOAD_DIR = "uploads"
@@ -11,25 +12,42 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def init_db():
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS documentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             titulo TEXT,
             tipo TEXT,
             ruta TEXT,
-            contenido TEXT
+            contenido_original TEXT
         )
     ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS indice (
+            palabra TEXT,
+            documento_id INTEGER,
+            FOREIGN KEY(documento_id) REFERENCES documentos(id)
+        )
+    ''')
+    
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_palabra ON indice(palabra)')
+    
     conn.commit()
     conn.close()
 
 init_db()
 
+def limpiar_y_extraer_palabras(texto):
+    texto_limpio = re.sub(r'[^\w\s]', '', texto.lower())
+    palabras = texto_limpio.split()
+    palabras_utiles = set([p for p in palabras if len(p) > 3])
+    return palabras_utiles
+
 @app.post("/upload/")
 async def upload_document(file: UploadFile = File(...)):
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Solo se admiten PDFs por ahora")
+    if not file.filename.endswith([".pdf", ".csv", ".xlsx"]):
+        raise HTTPException(status_code=400, detail="Solo se admiten PDFs, CSVs y XLSXs")
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
@@ -43,18 +61,27 @@ async def upload_document(file: UploadFile = File(...)):
     except Exception as e:
         print(f"Error leyendo PDF: {e}")
 
-    tipo = file.filename.split('.')[-1]
+    tipo = file.filename.split('.')[-1].lower()
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
+    
     cursor.execute(
-        "INSERT INTO documentos (titulo, tipo, ruta, contenido) VALUES (?, ?, ?, ?)",
+        "INSERT INTO documentos (titulo, tipo, ruta, contenido_original) VALUES (?, ?, ?, ?)",
         (file.filename, tipo, file_path, texto_extraido)
     )
     doc_id = cursor.lastrowid
+    
+    palabras_a_indexar = limpiar_y_extraer_palabras(texto_extraido)
+    for palabra in palabras_a_indexar:
+        cursor.execute(
+            "INSERT INTO indice (palabra, documento_id) VALUES (?, ?)", 
+            (palabra, doc_id)
+        )
+        
     conn.commit()
     conn.close()
 
-    return {"mensaje": "Documento subido con éxito", "id": doc_id, "titulo": file.filename}
+    return {"mensaje": "Documento subido e indexado con éxito", "id": doc_id}
 
 @app.get("/search/")
 async def search_documents(q: str = ""):
