@@ -60,7 +60,9 @@ async def upload_document(file: UploadFile = File(...)):
     if not file.filename.lower().endswith((".pdf", ".csv", ".xlsx", ".txt")):
         raise HTTPException(status_code=400, detail="Solo se admiten PDFs, CSVs, TXTs y XLSXs")
 
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    nombre_limpio = os.path.basename(file.filename)
+    file_path = os.path.join(UPLOAD_DIR, nombre_limpio)
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -81,6 +83,9 @@ async def upload_document(file: UploadFile = File(...)):
         elif tipo == "xlsx":
             df = pd.read_excel(file_path)
             texto_extraido = df.to_string(index=False)
+        elif tipo == "docx":
+            doc = docx.Document(file_path)
+            texto_extraido = " ".join([parrafo.text for parrafo in doc.paragraphs])
     except Exception as e:
         print(f"Error leyendo archivo: {e}")
 
