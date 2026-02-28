@@ -5,11 +5,10 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Search, UploadCloud, FileText, Filter, Trash2, Bot, Loader2, X, AlertTriangle, CheckCircle, SearchX, FolderUp, Zap, HardDrive } from "lucide-react"
+import { Search, UploadCloud, FileText, Filter, Trash2, Bot, Loader2, X, AlertTriangle, CheckCircle, SearchX, FolderUp, Zap, HardDrive, Info } from "lucide-react"
 
 const API_URL = "http://localhost:8000"
 
-// Utilidad para convertir bytes a KB/MB
 const formatBytes = (bytes: number) => {
   if (!bytes || bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -29,7 +28,7 @@ export default function SearchAndUploadInterface() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // NUEVO ESTADO: Controla el documento que está abierto en el Modal Flotante
+  // Estado para el documento seleccionado en la vista dividida
   const [selectedDoc, setSelectedDoc] = useState<any | null>(null)
 
   const allTypes = ['pdf', 'docx', 'txt', 'csv', 'xlsx'];
@@ -89,7 +88,7 @@ export default function SearchAndUploadInterface() {
 
     let successCount = 0;
     let errorCount = 0;
-    let duplicateCount = 0; // NUEVO: Contador de duplicados
+    let duplicateCount = 0;
 
     const filesArray = Array.from(files) as File[];
 
@@ -123,7 +122,7 @@ export default function SearchAndUploadInterface() {
 
     if (successCount > 0 || duplicateCount > 0) {
       let finalMsg = `Subidos: ${successCount} archivo(s).`;
-      if (duplicateCount > 0) finalMsg += ` (${duplicateCount} duplicados omitidos para ahorrar espacio).`;
+      if (duplicateCount > 0) finalMsg += ` (${duplicateCount} duplicados omitidos automáticamente).`;
       setSuccessMsg(finalMsg);
       await fetchDocuments();
     } else {
@@ -140,7 +139,7 @@ export default function SearchAndUploadInterface() {
         setSuccessMsg(`Documento eliminado.`)
         await fetchDocuments()
         setSearchResults(prev => prev.filter(doc => doc.id !== docId))
-        setSelectedDoc(null) // Cerramos el modal si se borra desde ahí
+        if (selectedDoc?.id === docId) setSelectedDoc(null);
       } else {
         setErrorMsg("Error al eliminar.")
       }
@@ -160,76 +159,7 @@ export default function SearchAndUploadInterface() {
   const filteredSearchResults = searchResults.filter(res => selectedTypes.includes(res.tipo?.toLowerCase() || ''))
 
   return (
-    <div className="min-h-screen bg-slate-50/50 font-sans text-slate-900 p-6 md:p-10 max-w-[1400px] mx-auto relative">
-
-      {/* ================= MODAL FLOTANTE (DETALLES DEL DOCUMENTO) ================= */}
-      {selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-slate-200">
-            {/* Header del Modal */}
-            <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
-              <div className="flex items-center gap-4">
-                <div className="p-4 bg-indigo-100 text-indigo-600 rounded-2xl shadow-inner">
-                  <FileText className="h-8 w-8" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 line-clamp-2" title={selectedDoc.titulo}>{selectedDoc.titulo}</h3>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <Badge className="bg-slate-200 text-slate-700 hover:bg-slate-300 border-none uppercase tracking-wider text-[10px]">{selectedDoc.tipo}</Badge>
-                    <span className="text-xs font-bold text-slate-400">ID Interno: {selectedDoc.id}</span>
-                  </div>
-                </div>
-              </div>
-              <button onClick={() => setSelectedDoc(null)} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded-full transition-colors">
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Cuerpo del Modal */}
-            <div className="p-6 space-y-6">
-              {/* Tarjetas de Métricas */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                  <div className="bg-blue-50 p-3 rounded-full"><HardDrive className="h-5 w-5 text-blue-500" /></div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Peso en Disco</span>
-                    <span className="text-lg font-black text-slate-800">{formatBytes(selectedDoc.peso)}</span>
-                  </div>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-                  <div className="bg-emerald-50 p-3 rounded-full"><Bot className="h-5 w-5 text-emerald-500" /></div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Estado IA</span>
-                    <span className="text-sm font-black text-emerald-600">Vectorizado ✔️</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Resumen IA */}
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-indigo-600"/> Fragmento / Resumen de Contenido
-                </h4>
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 text-sm text-slate-600 leading-relaxed italic shadow-inner h-40 overflow-y-auto">
-                  "{selectedDoc.resumen}"
-                </div>
-              </div>
-            </div>
-
-            {/* Footer del Modal */}
-            <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              <Button variant="destructive" onClick={() => handleDelete(selectedDoc.id, selectedDoc.titulo)} className="font-bold gap-2 bg-red-500 hover:bg-red-600">
-                <Trash2 className="h-4 w-4" /> Eliminar
-              </Button>
-              <Button variant="outline" onClick={() => setSelectedDoc(null)} className="font-bold border-slate-300">
-                Cerrar Panel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* ================= FIN DEL MODAL ================= */}
-
+    <div className="min-h-screen bg-slate-50/50 font-sans text-slate-900 p-6 md:p-10 max-w-[1500px] mx-auto relative">
 
       <header className="flex flex-col md:flex-row justify-between items-center mb-10 pb-6 border-b border-slate-200 gap-4">
         <div className="flex items-center gap-4">
@@ -277,10 +207,10 @@ export default function SearchAndUploadInterface() {
         )}
       </div>
 
-      <div className="flex flex-col md:flex-row gap-10">
+      <div className="flex flex-col md:flex-row gap-8">
 
         <aside className="w-full md:w-64 flex-shrink-0">
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm sticky top-6">
             <div className="flex items-center gap-2 font-bold text-lg mb-6 text-slate-800 border-b border-slate-100 pb-4">
               <Filter className="h-5 w-5 text-indigo-600" />
               <h3>Filtros Activos</h3>
@@ -333,6 +263,9 @@ export default function SearchAndUploadInterface() {
                               </div>
                             </div>
                           </div>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(res.id, res.titulo)} className="text-slate-300 hover:text-red-600 hover:bg-red-50">
+                            <Trash2 className="h-5 w-5" />
+                          </Button>
                         </div>
                         <div className="mt-5 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                           <div className="flex items-center gap-2 mb-2">
@@ -357,32 +290,32 @@ export default function SearchAndUploadInterface() {
           ) : (
             <>
               <section>
-                <div className={`relative border-2 border-dashed rounded-3xl p-12 flex flex-col items-center justify-center text-center transition-all ${isUploading ? 'border-indigo-400 bg-indigo-50/80 shadow-inner' : 'border-slate-300 bg-white hover:bg-slate-50 hover:border-indigo-400 shadow-sm'}`}>
+                <div className={`relative border-2 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center text-center transition-all ${isUploading ? 'border-indigo-400 bg-indigo-50/80 shadow-inner' : 'border-slate-300 bg-white hover:bg-slate-50 hover:border-indigo-400 shadow-sm'}`}>
                   {isUploading ? (
                     <div className="flex flex-col items-center animate-in fade-in">
                       <div className="bg-indigo-100 p-4 rounded-full mb-4"><Loader2 className="h-10 w-10 text-indigo-600 animate-spin" /></div>
-                      <h3 className="text-2xl font-black text-slate-900 mb-2">fAInd está indexando...</h3>
-                      <p className="text-slate-500 font-medium">Comprobando duplicados y entrenando IA...</p>
+                      <h3 className="text-xl font-black text-slate-900 mb-2">fAInd está indexando...</h3>
+                      <p className="text-slate-500 font-medium text-sm">Comprobando duplicados y entrenando IA...</p>
                     </div>
                   ) : (
                     <>
-                      <div className="bg-indigo-50 p-5 rounded-2xl mb-5 border border-indigo-100 shadow-sm"><UploadCloud className="h-10 w-10 text-indigo-600" /></div>
-                      <h3 className="text-2xl font-black text-slate-900 mb-2">Añadir a fAInd</h3>
-                      <p className="text-slate-500 font-medium max-w-lg mb-8">Sube archivos individuales o importa carpetas enteras de tu ordenador.</p>
+                      <div className="bg-indigo-50 p-4 rounded-2xl mb-4 border border-indigo-100 shadow-sm"><UploadCloud className="h-8 w-8 text-indigo-600" /></div>
+                      <h3 className="text-xl font-black text-slate-900 mb-2">Añadir a fAInd</h3>
+                      <p className="text-slate-500 text-sm font-medium max-w-lg mb-6">Sube archivos individuales o importa carpetas enteras de tu ordenador.</p>
 
-                      <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md justify-center">
+                      <div className="flex gap-4 w-full max-w-md justify-center">
                         <div className="relative flex-1">
                           <input type="file" multiple accept=".pdf,.docx,.txt,.csv,.xlsx" onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                          <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2 h-14 rounded-2xl text-base font-bold">
-                            <FileText className="h-5 w-5" /> Archivos
+                          <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2 h-12 rounded-xl font-bold">
+                            <FileText className="h-4 w-4" /> Archivos
                           </Button>
                         </div>
                         <div className="relative flex-1">
                           <input type="file"
                             // @ts-ignore
                             webkitdirectory="" directory="" multiple onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                          <Button variant="outline" className="w-full border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm gap-2 h-14 rounded-2xl text-base font-bold">
-                            <FolderUp className="h-5 w-5" /> Carpeta
+                          <Button variant="outline" className="w-full border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm gap-2 h-12 rounded-xl font-bold">
+                            <FolderUp className="h-4 w-4" /> Carpeta
                           </Button>
                         </div>
                       </div>
@@ -391,45 +324,108 @@ export default function SearchAndUploadInterface() {
                 </div>
               </section>
 
-              <section>
-                <div className="flex items-center justify-between mb-6">
+              {/* ===================== VISTA MAESTRO-DETALLE ===================== */}
+              <section className="flex flex-col gap-4">
+                <div className="flex items-center justify-between mb-2">
                   <h3 className="font-bold text-2xl text-slate-800 flex items-center gap-3">
                     Repositorio Local
                     <Badge className="bg-slate-200 text-slate-700 border-none px-3 py-1 text-sm">{filteredDocuments.length}</Badge>
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {filteredDocuments.length === 0 ? (
-                    <div className="col-span-full bg-white p-10 rounded-3xl text-center border border-slate-200 shadow-sm">
-                      <p className="text-slate-500 font-semibold text-lg">No hay documentos en fAInd.</p>
-                    </div>
-                  ) : (
-                    filteredDocuments.map((doc: any) => (
-                      <Card
-                        key={doc.id}
-                        onClick={() => setSelectedDoc(doc)} // AQUÍ SE ABRE EL MODAL AL HACER CLIC
-                        className="border-slate-200 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all group bg-white rounded-2xl cursor-pointer"
-                      >
-                        <CardContent className="p-5 flex items-center justify-between">
-                          <div className="flex items-center gap-4 overflow-hidden pr-3">
-                            <div className="p-3 bg-slate-50 text-slate-500 rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors shrink-0 border border-slate-100">
-                              <FileText className="h-6 w-6" />
+                <div className="flex flex-col lg:flex-row gap-6 items-start">
+
+                  {/* COLUMNA IZQUIERDA: LISTA DE ARCHIVOS SCROLL */}
+                  <div className="w-full lg:w-5/12 xl:w-1/3 flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                    {filteredDocuments.length === 0 ? (
+                      <div className="bg-white p-8 rounded-3xl text-center border border-slate-200 shadow-sm">
+                        <p className="text-slate-500 font-semibold text-sm">No hay documentos en fAInd.</p>
+                      </div>
+                    ) : (
+                      filteredDocuments.map((doc: any) => (
+                        <Card
+                          key={doc.id}
+                          onClick={() => setSelectedDoc(doc)}
+                          className={`border-2 transition-all group bg-white rounded-2xl cursor-pointer shadow-sm
+                            ${selectedDoc?.id === doc.id ? 'border-indigo-500 shadow-md ring-2 ring-indigo-100' : 'border-slate-100 hover:border-indigo-300'}`}
+                        >
+                          <CardContent className="p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3 overflow-hidden pr-2">
+                              <div className={`p-2.5 rounded-xl shrink-0 transition-colors
+                                ${selectedDoc?.id === doc.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600'}`}>
+                                <FileText className="h-5 w-5" />
+                              </div>
+                              <div className="truncate">
+                                <p className={`font-bold transition-colors truncate text-sm
+                                  ${selectedDoc?.id === doc.id ? 'text-indigo-900' : 'text-slate-800 group-hover:text-indigo-700'}`} title={doc.titulo}>
+                                    {doc.titulo}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">{doc.tipo} • ID: {doc.id}</p>
+                              </div>
                             </div>
-                            <div className="truncate">
-                              <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate text-lg" title={doc.titulo}>{doc.titulo}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{doc.tipo} • {formatBytes(doc.peso)}</p>
+                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDelete(doc.id, doc.titulo) }} className="text-slate-300 hover:text-red-600 hover:bg-red-50 shrink-0 h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+
+                  {/* COLUMNA DERECHA: PANEL DE DETALLES FIJO */}
+                  <div className="w-full lg:w-7/12 xl:w-2/3 sticky top-6">
+                    {selectedDoc ? (
+                      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col animate-in fade-in slide-in-from-right-4">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                          <h3 className="text-xl font-black text-slate-900 break-words">{selectedDoc.titulo}</h3>
+                          <div className="flex items-center gap-3 mt-2">
+                            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-none uppercase tracking-wider text-xs">{selectedDoc.tipo}</Badge>
+                            <span className="text-xs font-bold text-slate-400">ID en fAInd: {selectedDoc.id}</span>
+                          </div>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                              <div className="bg-blue-50 p-3 rounded-xl"><HardDrive className="h-5 w-5 text-blue-500" /></div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Peso en Disco</span>
+                                <span className="text-base font-black text-slate-800">{formatBytes(selectedDoc.peso)}</span>
+                              </div>
+                            </div>
+                            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+                              <div className="bg-emerald-50 p-3 rounded-xl"><Bot className="h-5 w-5 text-emerald-500" /></div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Estado IA</span>
+                                <span className="text-sm font-black text-emerald-600">Vectorizado ✔️</span>
                               </div>
                             </div>
                           </div>
-                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDelete(doc.id, doc.titulo) }} className="text-slate-300 hover:text-red-600 hover:bg-red-50 shrink-0">
-                            <Trash2 className="h-5 w-5" />
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
+
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                              <Info className="h-4 w-4 text-indigo-600"/> Vista previa de extracción (Raw)
+                            </h4>
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 text-sm text-slate-600 leading-relaxed italic shadow-inner h-64 overflow-y-auto">
+                              "{selectedDoc.resumen}"
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* PLACEHOLDER SI NO HAY NADA SELECCIONADO */
+                      <div className="bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-3xl p-16 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
+                        <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                          <FileText className="h-10 w-10 text-slate-300" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-2">Ningún archivo seleccionado</h3>
+                        <p className="text-slate-500 text-sm max-w-sm">
+                          Haz clic en cualquier documento de la lista de la izquierda para ver sus propiedades, peso y el texto que fAInd ha conseguido extraer de él.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </section>
             </>
