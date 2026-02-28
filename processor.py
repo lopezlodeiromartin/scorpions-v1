@@ -10,9 +10,6 @@ from langdetect import detect
 import pytesseract
 
 # Configuración de Tesseract para Windows
-pytesseract.pytesseract.tesseract_cmd = r'import pytesseract
-
-# Configuración de Tesseract para Windows
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 def limpiar_texto(texto):
