@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Search, UploadCloud, FileText, Filter, Trash2, Bot, Loader2, X, AlertTriangle, CheckCircle, SearchX, FolderUp } from "lucide-react"
+import { Search, UploadCloud, FileText, Filter, Trash2, Bot, Loader2, X, AlertTriangle, CheckCircle, SearchX, FolderUp, Zap } from "lucide-react"
 
 const API_URL = "http://localhost:8000"
 
@@ -16,12 +16,10 @@ export default function SearchAndUploadInterface() {
   const [isUploading, setIsUploading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Estados para UX
   const [hasSearched, setHasSearched] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // NUEVO: Estado para los filtros funcionales
   const allTypes = ['pdf', 'docx', 'txt', 'csv', 'xlsx'];
   const [selectedTypes, setSelectedTypes] = useState<string[]>(allTypes)
 
@@ -34,7 +32,6 @@ export default function SearchAndUploadInterface() {
     setSuccessMsg(null)
   }
 
-  // NUEVO: Lógica para activar/desactivar filtros
   const handleTypeToggle = (type: string) => {
     setSelectedTypes(prev =>
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
@@ -73,7 +70,6 @@ export default function SearchAndUploadInterface() {
     }
   }
 
-  // NUEVO: Lógica para subir múltiples archivos y carpetas
   const handleUpload = async (e: any) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -84,13 +80,10 @@ export default function SearchAndUploadInterface() {
     let successCount = 0;
     let errorCount = 0;
 
-    // Iteramos por todos los archivos de la carpeta o selección
     const filesArray = Array.from(files) as File[];
 
     for (const file of filesArray) {
       const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase().replace('.', '');
-
-      // Omitimos archivos ocultos o no soportados por el backend
       if (!allTypes.includes(fileExtension)) {
          errorCount++;
          continue;
@@ -100,10 +93,7 @@ export default function SearchAndUploadInterface() {
       formData.append("file", file)
 
       try {
-        const res = await fetch(`${API_URL}/upload/`, {
-          method: "POST",
-          body: formData,
-        })
+        const res = await fetch(`${API_URL}/upload/`, { method: "POST", body: formData })
         if (res.ok) successCount++;
         else errorCount++;
       } catch (error) {
@@ -112,34 +102,30 @@ export default function SearchAndUploadInterface() {
     }
 
     setIsUploading(false);
-    e.target.value = ''; // Reset input
+    e.target.value = '';
 
     if (successCount > 0) {
-      setSuccessMsg(`¡Se han subido e indexado ${successCount} documento(s) correctamente! ${errorCount > 0 ? `(Omitidos ${errorCount} por formato no soportado)` : ''}`);
+      setSuccessMsg(`¡Se han subido e indexado ${successCount} documento(s) correctamente! ${errorCount > 0 ? `(Omitidos ${errorCount} por formato)` : ''}`);
       await fetchDocuments();
     } else {
-      setErrorMsg("Ningún archivo válido encontrado. Asegúrate de que la carpeta contiene PDFs, CSVs, TXTs o XLSXs.");
+      setErrorMsg("Ningún archivo válido encontrado.");
     }
   }
 
-  // NUEVO: Lógica conectada al endpoint DELETE de tu backend
   const handleDelete = async (docId: number, docTitle: string) => {
-    if (!confirm(`¿Seguro que quieres eliminar "${docTitle}" del sistema y la base de datos?`)) return;
+    if (!confirm(`¿Seguro que quieres eliminar "${docTitle}" del sistema?`)) return;
 
     try {
-      const res = await fetch(`${API_URL}/documents/${docId}/`, {
-        method: 'DELETE'
-      })
+      const res = await fetch(`${API_URL}/documents/${docId}/`, { method: 'DELETE' })
       if (res.ok) {
         setSuccessMsg(`Documento "${docTitle}" eliminado.`)
         await fetchDocuments()
-        // Lo quitamos también visualmente de los resultados de búsqueda si existiera
         setSearchResults(prev => prev.filter(doc => doc.id !== docId))
       } else {
-        setErrorMsg("Error al eliminar el documento en el backend.")
+        setErrorMsg("Error al eliminar el documento.")
       }
     } catch (error) {
-      setErrorMsg("Error de conexión al intentar eliminar.")
+      setErrorMsg("Error de conexión.")
     }
   }
 
@@ -150,32 +136,56 @@ export default function SearchAndUploadInterface() {
     clearMessages()
   }
 
-  // NUEVO: Filtros aplicados en tiempo real a las listas
   const filteredDocuments = documents.filter(doc => selectedTypes.includes(doc.tipo?.toLowerCase() || ''))
   const filteredSearchResults = searchResults.filter(res => selectedTypes.includes(res.tipo?.toLowerCase() || ''))
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-900 p-6 md:p-10 max-w-[1400px] mx-auto">
+    <div className="min-h-screen bg-slate-50/50 font-sans text-slate-900 p-6 md:p-10 max-w-[1400px] mx-auto">
+
+      {/* === HEADER CON BRANDING: fAInd, HackUDC, Scorpions === */}
+      <header className="flex flex-col md:flex-row justify-between items-center mb-10 pb-6 border-b border-slate-200 gap-4">
+        <div className="flex items-center gap-4">
+          <div className="bg-gradient-to-br from-indigo-600 to-blue-500 p-3 rounded-2xl shadow-lg shadow-indigo-200">
+            <Zap className="h-8 w-8 text-white" />
+          </div>
+          <div>
+            <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-indigo-600 tracking-tight">
+              fAInd
+            </h1>
+            <p className="text-sm font-bold text-slate-400 tracking-widest uppercase mt-0.5">
+              By Grupo Scorpions
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="px-4 py-1.5 border-indigo-200 text-indigo-700 bg-indigo-50/50 font-semibold text-sm rounded-full">
+            HackUDC 2026
+          </Badge>
+          <Badge variant="secondary" className="px-4 py-1.5 bg-slate-200/50 text-slate-600 font-medium text-sm rounded-full">
+            Versión 1.0
+          </Badge>
+        </div>
+      </header>
 
       {/* BARRA DE BÚSQUEDA */}
-      <form onSubmit={handleSearch} className="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
+      <form onSubmit={handleSearch} className="mb-8">
         <div className="relative flex-1 max-w-4xl mx-auto flex items-center gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
+            <Search className="absolute left-5 top-4 h-6 w-6 text-slate-400" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar contenido en los documentos indexados..."
-              className="pl-12 h-12 text-lg bg-slate-50 border-slate-200 rounded-xl focus-visible:ring-indigo-500 shadow-inner"
+              placeholder="Pregúntale a fAInd sobre tus documentos..."
+              className="pl-14 h-14 text-lg bg-white border-slate-200 rounded-2xl focus-visible:ring-indigo-500 shadow-sm"
             />
             {searchQuery && (
-              <button type="button" onClick={clearSearch} className="absolute right-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors">
-                <X className="h-5 w-5" />
+              <button type="button" onClick={clearSearch} className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 transition-colors">
+                <X className="h-6 w-6" />
               </button>
             )}
           </div>
-          <Button type="submit" disabled={isSearching} className="bg-indigo-600 hover:bg-indigo-700 text-white h-12 px-8 rounded-xl font-medium transition-all shadow-sm hover:shadow-md">
-            {isSearching ? <Loader2 className="h-5 w-5 animate-spin" /> : "Buscar"}
+          <Button type="submit" disabled={isSearching} className="bg-indigo-600 hover:bg-indigo-700 text-white h-14 px-8 rounded-2xl font-bold text-lg transition-all shadow-md hover:shadow-lg">
+            {isSearching ? <Loader2 className="h-6 w-6 animate-spin" /> : "Buscar"}
           </Button>
         </div>
       </form>
@@ -183,17 +193,17 @@ export default function SearchAndUploadInterface() {
       {/* ALERTAS VISUALES */}
       <div className="max-w-4xl mx-auto mb-6">
         {errorMsg && (
-          <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-800 flex items-center gap-3 rounded-r-lg shadow-sm animate-in fade-in">
+          <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-800 flex items-center gap-3 rounded-r-xl shadow-sm animate-in fade-in">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <p className="font-medium text-sm flex-1">{errorMsg}</p>
-            <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-800"><X className="h-5 w-5"/></button>
+            <button onClick={() => setErrorMsg(null)} className="text-red-500"><X className="h-5 w-5"/></button>
           </div>
         )}
         {successMsg && (
-          <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-800 flex items-center gap-3 rounded-r-lg shadow-sm animate-in fade-in">
+          <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-800 flex items-center gap-3 rounded-r-xl shadow-sm animate-in fade-in">
             <CheckCircle className="h-5 w-5 shrink-0" />
             <p className="font-medium text-sm flex-1">{successMsg}</p>
-            <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-800"><X className="h-5 w-5"/></button>
+            <button onClick={() => setSuccessMsg(null)} className="text-emerald-500"><X className="h-5 w-5"/></button>
           </div>
         )}
       </div>
@@ -202,26 +212,28 @@ export default function SearchAndUploadInterface() {
 
         {/* COLUMNA IZQUIERDA: FILTROS DINÁMICOS */}
         <aside className="w-full md:w-64 flex-shrink-0">
-          <div className="flex items-center gap-2 font-bold text-lg mb-6 text-slate-800 border-b border-slate-100 pb-3">
-            <Filter className="h-5 w-5 text-indigo-600" />
-            <h3>Filtros Activos</h3>
-          </div>
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-2 font-bold text-lg mb-6 text-slate-800 border-b border-slate-100 pb-4">
+              <Filter className="h-5 w-5 text-indigo-600" />
+              <h3>Filtros Activos</h3>
+            </div>
 
-          <div className="space-y-6">
-            <div>
-              <h4 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Formatos Soportados</h4>
-              <div className="space-y-3">
-                {allTypes.map(ext => (
-                  <label key={ext} className="flex items-center gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={selectedTypes.includes(ext)}
-                      onChange={() => handleTypeToggle(ext)}
-                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
-                    />
-                    <span className="text-slate-600 font-medium group-hover:text-indigo-700 transition-colors uppercase">{ext}</span>
-                  </label>
-                ))}
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 mb-4 uppercase tracking-wider">Formatos Soportados</h4>
+                <div className="space-y-3.5">
+                  {allTypes.map(ext => (
+                    <label key={ext} className="flex items-center gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={selectedTypes.includes(ext)}
+                        onChange={() => handleTypeToggle(ext)}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                      />
+                      <span className="text-slate-600 font-medium group-hover:text-indigo-700 transition-colors uppercase">{ext}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -234,18 +246,18 @@ export default function SearchAndUploadInterface() {
             /* --- VISTA DE BÚSQUEDA --- */
             <section>
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-semibold text-xl text-slate-800 flex items-center gap-2">
-                  Resultados encontrados
-                  <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-none px-2 py-1">{filteredSearchResults.length}</Badge>
+                <h3 className="font-bold text-2xl text-slate-800 flex items-center gap-3">
+                  Resultados de fAInd
+                  <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border-none px-3 py-1 text-sm">{filteredSearchResults.length}</Badge>
                 </h3>
-                <Button variant="ghost" size="sm" onClick={clearSearch} className="text-slate-500 hover:text-slate-800">Volver a mis archivos</Button>
+                <Button variant="ghost" onClick={clearSearch} className="text-slate-500 hover:text-slate-800 font-semibold">Volver a mis archivos</Button>
               </div>
 
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-5">
                 {filteredSearchResults.length > 0 ? (
                   filteredSearchResults.map((res: any) => (
-                    <Card key={res.id} className="border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md hover:border-indigo-200 group">
-                      <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-blue-500"></div>
+                    <Card key={res.id} className="border-slate-200 shadow-sm relative overflow-hidden transition-all hover:shadow-md hover:border-indigo-300 group bg-white">
+                      <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 to-blue-500"></div>
                       <CardContent className="p-6">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-4">
@@ -253,8 +265,17 @@ export default function SearchAndUploadInterface() {
                               <FileText className="h-6 w-6 text-indigo-600" />
                             </div>
                             <div>
-                              <h4 className="text-lg font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">{res.titulo}</h4>
-                              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-1 block">TIPO: {res.tipo || "PDF"} • DOC-ID: {res.id}</span>
+                              <h4 className="text-xl font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">{res.titulo}</h4>
+                              <div className="flex items-center gap-3 mt-1.5">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">TIPO: {res.tipo || "PDF"}</span>
+
+                                {/* AQUI ESTA EL PORCENTAJE DE SIMILITUD DE LA IA */}
+                                {res.score && (
+                                  <Badge className={`${res.score > 85 ? 'bg-emerald-100 text-emerald-700' : res.score > 70 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'} border-none font-bold`}>
+                                    {res.score}% Similitud
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(res.id, res.titulo)} className="text-slate-300 hover:text-red-600 hover:bg-red-50">
@@ -262,11 +283,10 @@ export default function SearchAndUploadInterface() {
                           </Button>
                         </div>
 
-                        {/* Panel de Resumen IA */}
-                        <div className="mt-5 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div className="mt-5 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                           <div className="flex items-center gap-2 mb-2">
-                            <Bot className="h-4 w-4 text-indigo-600" />
-                            <span className="text-sm font-bold text-slate-700">Contexto extraído por IA</span>
+                            <Bot className="h-5 w-5 text-indigo-600" />
+                            <span className="text-sm font-bold text-slate-800">Contexto extraído por fAInd AI</span>
                           </div>
                           <p className="text-sm text-slate-600 italic leading-relaxed">
                             "{res.resumen}"
@@ -276,15 +296,15 @@ export default function SearchAndUploadInterface() {
                     </Card>
                   ))
                 ) : (
-                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-16 text-center flex flex-col items-center">
-                    <div className="bg-white p-4 rounded-full shadow-sm mb-4">
-                      <SearchX className="h-10 w-10 text-slate-400" />
+                  <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-16 text-center flex flex-col items-center shadow-sm">
+                    <div className="bg-slate-50 p-5 rounded-full mb-4">
+                      <SearchX className="h-12 w-12 text-slate-400" />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">Sin resultados con los filtros actuales</h3>
-                    <p className="text-slate-500 text-sm max-w-md">
-                      Intenta buscar otras palabras o marca más tipos de archivos en la barra lateral izquierda.
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">Sin resultados con los filtros actuales</h3>
+                    <p className="text-slate-500 text-base max-w-md">
+                      fAInd no ha encontrado relación semántica. Intenta buscar otras palabras o cambiar los filtros.
                     </p>
-                    <Button variant="outline" onClick={clearSearch} className="mt-6 border-slate-300">Limpiar búsqueda</Button>
+                    <Button variant="outline" onClick={clearSearch} className="mt-6 border-slate-300 font-semibold">Limpiar búsqueda</Button>
                   </div>
                 )}
               </div>
@@ -294,61 +314,42 @@ export default function SearchAndUploadInterface() {
             <>
               {/* ZONA DE SUBIDA DOBLE */}
               <section>
-                <div className={`relative border-2 border-dashed rounded-3xl p-12 flex flex-col items-center justify-center text-center transition-all ${isUploading ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-indigo-300'}`}>
+                <div className={`relative border-2 border-dashed rounded-3xl p-12 flex flex-col items-center justify-center text-center transition-all ${isUploading ? 'border-indigo-400 bg-indigo-50/80 shadow-inner' : 'border-slate-300 bg-white hover:bg-slate-50 hover:border-indigo-400 shadow-sm'}`}>
 
                   {isUploading ? (
                     <div className="flex flex-col items-center animate-in fade-in">
-                      <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mb-4" />
-                      <h3 className="text-xl font-bold text-slate-900 mb-1">Indexando documentos...</h3>
-                      <p className="text-slate-500 text-sm">Extrayendo texto y procesando con Inteligencia Artificial.</p>
+                      <div className="bg-indigo-100 p-4 rounded-full mb-4">
+                        <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900 mb-2">fAInd está indexando...</h3>
+                      <p className="text-slate-500 font-medium">Extrayendo vectores y procesando con Inteligencia Artificial.</p>
                     </div>
                   ) : (
                     <>
-                      <div className="bg-white p-5 rounded-2xl shadow-sm mb-5 border border-slate-100">
+                      <div className="bg-indigo-50 p-5 rounded-2xl mb-5 border border-indigo-100 shadow-sm">
                         <UploadCloud className="h-10 w-10 text-indigo-600" />
                       </div>
-                      <h3 className="text-xl font-bold text-slate-900 mb-2">Añadir a la base documental</h3>
-                      <p className="text-slate-500 text-sm max-w-md mb-8">
-                        Sube archivos individuales o importa carpetas enteras de tu ordenador. El sistema filtrará automáticamente los formatos no soportados.
+                      <h3 className="text-2xl font-black text-slate-900 mb-2">Añadir a fAInd</h3>
+                      <p className="text-slate-500 font-medium max-w-lg mb-8">
+                        Sube archivos individuales o importa carpetas enteras de tu ordenador para entrenar la base documental privada.
                       </p>
 
-                      {/* BOTONES MÁGICOS DE SUBIDA */}
                       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md justify-center">
-
-                        {/* Botón 1: Archivos Sueltos */}
                         <div className="relative flex-1">
-                          <input
-                            type="file"
-                            multiple
-                            accept=".pdf,.docx,.txt,.csv,.xlsx"
-                            onChange={handleUpload}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            title="Seleccionar archivos"
-                          />
-                          <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2 h-12 rounded-xl text-base">
-                            <FileText className="h-5 w-5" />
-                            Archivos
+                          <input type="file" multiple accept=".pdf,.docx,.txt,.csv,.xlsx" onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2 h-14 rounded-2xl text-base font-bold">
+                            <FileText className="h-5 w-5" /> Archivos
                           </Button>
                         </div>
 
-                        {/* Botón 2: Carpeta Completa (Usando atributos nativos webkit) */}
                         <div className="relative flex-1">
-                          <input
-                            type="file"
-                            // @ts-ignore - Atributos especiales para carpetas
-                            webkitdirectory=""
-                            directory=""
-                            multiple
-                            onChange={handleUpload}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            title="Seleccionar una carpeta"
-                          />
-                          <Button variant="outline" className="w-full border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm gap-2 h-12 rounded-xl text-base font-semibold">
-                            <FolderUp className="h-5 w-5" />
-                            Carpeta
+                          <input type="file"
+                            // @ts-ignore
+                            webkitdirectory="" directory="" multiple onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                          <Button variant="outline" className="w-full border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-sm gap-2 h-14 rounded-2xl text-base font-bold">
+                            <FolderUp className="h-5 w-5" /> Carpeta
                           </Button>
                         </div>
-
                       </div>
                     </>
                   )}
@@ -357,29 +358,29 @@ export default function SearchAndUploadInterface() {
 
               {/* LISTA DE ARCHIVOS FILTRADA */}
               <section>
-                <div className="flex items-center justify-between mb-5">
-                  <h3 className="font-semibold text-xl text-slate-800 flex items-center gap-2">
-                    Archivos en tu repositorio
-                    <Badge variant="secondary" className="ml-2 bg-slate-100 text-slate-600 px-2 py-0.5">{filteredDocuments.length}</Badge>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-2xl text-slate-800 flex items-center gap-3">
+                    Repositorio Local
+                    <Badge className="bg-slate-200 text-slate-700 hover:bg-slate-300 border-none px-3 py-1 text-sm">{filteredDocuments.length}</Badge>
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {filteredDocuments.length === 0 ? (
-                    <div className="col-span-full bg-slate-50 p-10 rounded-2xl text-center border-2 border-dashed border-slate-200">
-                      <p className="text-slate-500 font-medium">No hay documentos que coincidan con los filtros seleccionados.</p>
+                    <div className="col-span-full bg-white p-10 rounded-3xl text-center border border-slate-200 shadow-sm">
+                      <p className="text-slate-500 font-semibold text-lg">No hay documentos en fAInd que coincidan con los filtros.</p>
                     </div>
                   ) : (
                     filteredDocuments.map((doc: any) => (
-                      <Card key={doc.id} className="border-slate-200 shadow-sm hover:border-indigo-300 transition-colors group">
-                        <CardContent className="p-4 flex items-center justify-between">
+                      <Card key={doc.id} className="border-slate-200 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all group bg-white rounded-2xl">
+                        <CardContent className="p-5 flex items-center justify-between">
                           <div className="flex items-center gap-4 overflow-hidden pr-3">
-                            <div className="p-3 bg-slate-100 text-slate-600 rounded-xl group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors shrink-0">
+                            <div className="p-3 bg-slate-50 text-slate-500 rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors shrink-0 border border-slate-100">
                               <FileText className="h-6 w-6" />
                             </div>
                             <div className="truncate">
-                              <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate" title={doc.titulo}>{doc.titulo}</p>
-                              <p className="text-xs font-semibold text-slate-400 mt-1 uppercase tracking-wider">ID: {doc.id} • {doc.tipo}</p>
+                              <p className="font-bold text-slate-900 group-hover:text-indigo-700 transition-colors truncate text-lg" title={doc.titulo}>{doc.titulo}</p>
+                              <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">ID: {doc.id} • {doc.tipo}</p>
                             </div>
                           </div>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(doc.id, doc.titulo)} className="text-slate-300 hover:text-red-600 hover:bg-red-50 shrink-0">
@@ -393,7 +394,6 @@ export default function SearchAndUploadInterface() {
               </section>
             </>
           )}
-
         </main>
       </div>
     </div>

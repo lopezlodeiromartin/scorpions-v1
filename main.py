@@ -191,7 +191,8 @@ async def search_documents(q: str = "", tipo: str = ""):
                     "id": metadata["id_sqlite"],
                     "titulo": metadata["titulo"],
                     "tipo": metadata["tipo"],
-                    "resumen": contenido[:150] + "..." if contenido else "Sin contenido extraíble"
+                    "resumen": contenido[:150] + "..." if contenido else "Sin contenido extraíble",
+                    "score": int(porcentaje)
                 })
 
     return {"total": len(docs), "resultados": docs}
