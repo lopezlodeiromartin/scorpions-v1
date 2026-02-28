@@ -105,37 +105,71 @@ async def upload_document(file: UploadFile = File(...)):
 
     return {"mensaje": "Documento subido e indexado con éxito", "id": doc_id}
 
+@app.delete("/documents/{doc_id}/")
+async def delete_document(doc_id: int):
+    conn = sqlite3.connect("documentos.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT ruta FROM documentos WHERE id = ?", (doc_id,))
+    resultado = cursor.fetchone()
+    if not resultado:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    ruta_archivo = resultado[0]
+    if os.path.exists(ruta_archivo):
+        os.remove(ruta_archivo)
+
+    cursor.execute("DELETE FROM documentos WHERE id = ?", (doc_id,))
+    cursor.execute("DELETE FROM indice WHERE documento_id = ?", (doc_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {"mensaje": "Documento eliminado con éxito"}
+
 @app.get("/search/")
-async def search_documents(q: str = ""):
+async def search_documents(q: str = "", tipo: str = ""):
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
 
     if not q.strip():
-        conn.close()
-        return {"total": 0, "resultados": []}
-
-    palabras_busqueda = re.sub(r'[^\w\s]', '', q.lower()).split()
-    palabras_busqueda = [p for p in palabras_busqueda if len(p) > 3]
-    
-    sets_de_documentos = []
-    for palabra in palabras_busqueda:
-        cursor.execute("SELECT documento_id FROM indice WHERE palabra LIKE ?", (f"{palabra}%",))
-        doc_ids = set([fila[0] for fila in cursor.fetchall()])
-        sets_de_documentos.append(doc_ids)
+        if tipo.strip():
+            cursor.execute("SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE tipo = ? ORDER BY id DESC", (tipo.lower(),))
+            resultados = cursor.fetchall()
+        else:
+            conn.close()
+            return {"total": 0, "resultados": []}
+    else:
+        palabras_busqueda = re.sub(r'[^\w\s]', '', q.lower()).split()
+        palabras_busqueda = [p for p in palabras_busqueda if len(p) > 3]
         
-    if not sets_de_documentos or not all(sets_de_documentos):
-        conn.close()
-        return {"total": 0, "resultados": []}
-        
-    ids_comunes = set.intersection(*sets_de_documentos)
-    if not ids_comunes:
-        conn.close()
-        return {"total": 0, "resultados": []}
+        sets_de_documentos = []
+        for palabra in palabras_busqueda:
+            cursor.execute("SELECT documento_id FROM indice WHERE palabra LIKE ?", (f"{palabra}%",))
+            doc_ids = set([fila[0] for fila in cursor.fetchall()])
+            sets_de_documentos.append(doc_ids)
+            
+        if not sets_de_documentos or not all(sets_de_documentos):
+            conn.close()
+            return {"total": 0, "resultados": []}
+            
+        ids_comunes = set.intersection(*sets_de_documentos)
+        if not ids_comunes:
+            conn.close()
+            return {"total": 0, "resultados": []}
 
-    placeholders = ",".join("?" * len(ids_comunes))
-    query = f"SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE id IN ({placeholders})"
-    cursor.execute(query, list(ids_comunes))
-    resultados = cursor.fetchall()
+        placeholders = ",".join("?" * len(ids_comunes))
+        query = f"SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE id IN ({placeholders})"
+        parametros = list(ids_comunes)
+
+        if tipo.strip():
+            query += " AND tipo = ?"
+            parametros.append(tipo.lower())
+
+        cursor.execute(query, parametros)
+        resultados = cursor.fetchall()
+
     conn.close()
 
     docs = [

@@ -36,6 +36,26 @@ class DocumentClient:
             print(f"[ERROR] Excepción inesperada: {e}")
             return {}
 
+    def delete_document(self, doc_id: int) -> bool:
+        url = f"{self.base_url}documents/{doc_id}/"
+
+        try:
+            r = requests.delete(url)
+            if r.status_code == 200:
+                return True
+            else:
+                print(f"[ERROR] La API devolvió un error al eliminar ({r.status_code}): {r.text}")
+                return False
+        except ConnectionError:
+            print("[ERROR] No se pudo conectar con el servidor. ¿Está uvicorn encendido?")
+            return False
+        except Timeout:
+            print("[ERROR] La solicitud al servidor ha tardado demasiado.")
+            return False
+        except Exception as e:
+            print(f"[ERROR] Excepción inesperada: {e}")
+            return False
+
     def list_documents(self) -> list:
         url = f"{self.base_url}documents/"
 
@@ -50,10 +70,12 @@ class DocumentClient:
             print(f"[ERROR] Fallo de conexión: {e}")
             return []
 
-    def search_documents(self, query: str = "") -> list:
+    def search_documents(self, query: str = "", tipo: str = "") -> list:
         url = f"{self.base_url}search/"
         
         parametros = {"q": query}
+        if tipo:
+            parametros["tipo"] = tipo
 
         try:
             r = requests.get(url, params=parametros)
