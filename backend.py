@@ -8,33 +8,37 @@ class DocumentClient:
     def __init__(self):
         self.base_url = SERVER_URL
 
-    def upload_document(self, file_path: str) -> dict:
-        url = f"{self.base_url}upload/"
+    def upload(self, target_path: str) -> list:
+        resultados = []
+        extensiones_validas = (".pdf", ".csv", ".xlsx", ".txt")
 
-        if not os.path.exists(file_path):
-            print(f"[ERROR] No se encontró el archivo en la ruta: {file_path}")
-            return {}
-
-        try:
-            with open(file_path, "rb") as f:
-                archivos = {"file": f}
-                r = requests.post(url, files=archivos)
-
-            if r.status_code == 200:
-                return r.json()
+        if os.path.isfile(target_path):
+            if target_path.lower().endswith(extensiones_validas):
+                url = f"{self.base_url}upload/"
+                try:
+                    with open(target_path, "rb") as f:
+                        archivos = {"file": f}
+                        r = requests.post(url, files=archivos)
+                    if r.status_code == 200:
+                        resultados.append(r.json())
+                    else:
+                        print(f"[ERROR] API ({r.status_code}): {r.text}")
+                except Exception as e:
+                    print(f"[ERROR] Excepción: {e}")
             else:
-                print(f"[ERROR] La API devolvió un error ({r.status_code}): {r.text}")
-                return {}
+                print(f"[AVISO] Formato no soportado: {target_path}")
 
-        except ConnectionError:
-            print("[ERROR] No se pudo conectar con el servidor. ¿Está uvicorn encendido?")
-            return {}
-        except Timeout:
-            print("[ERROR] La solicitud al servidor ha tardado demasiado.")
-            return {}
-        except Exception as e:
-            print(f"[ERROR] Excepción inesperada: {e}")
-            return {}
+        elif os.path.isdir(target_path):
+            print(f"Explorando carpeta: {target_path}")
+            for nombre_archivo in os.listdir(target_path):
+                ruta_completa = os.path.join(target_path, nombre_archivo)
+                if os.path.isfile(ruta_completa):
+                    resultados.extend(self.upload(ruta_completa)) 
+
+        else:
+            print(f"[ERROR] La ruta no existe: {target_path}")
+            
+        return resultados
 
     def delete_document(self, doc_id: int) -> bool:
         url = f"{self.base_url}documents/{doc_id}/"
