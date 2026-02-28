@@ -5,23 +5,20 @@ import os
 import shutil
 from PyPDF2 import PdfReader
 import pandas as pd
-import re
+import hashlib # NUEVO: Para detectar duplicados
 
 from sentence_transformers import SentenceTransformer
 import chromadb
-
-#modelo IA
 
 modelo_ia = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 coleccion_vectores = chroma_client.get_or_create_collection(
-    name="documentos", 
+    name="documentos",
     metadata={"hnsw:space": "cosine"}
 )
-#==
 
-app = FastAPI(title="Hackathon Doc API")
+app = FastAPI(title="fAInd API - Hackathon")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,51 +34,53 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def init_db():
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-
+    # NUEVO: Columnas 'peso' y 'hash_md5' añadidas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS documentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             titulo TEXT,
             tipo TEXT,
             ruta TEXT,
-            contenido_original TEXT
+            contenido_original TEXT,
+            peso INTEGER,
+            hash_md5 TEXT
         )
     ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS indice (
-            palabra TEXT,
-            documento_id INTEGER,
-            FOREIGN KEY(documento_id) REFERENCES documentos(id)
-        )
-    ''')
-
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_palabra ON indice(palabra)')
-
     conn.commit()
     conn.close()
 
 init_db()
 
-def limpiar_y_extraer_palabras(texto):
-    texto_limpio = re.sub(r'[^\w\s]', '', str(texto).lower())
-    palabras = texto_limpio.split()
-    palabras_utiles = set([p for p in palabras if len(p) > 3])
-    return palabras_utiles
-
 @app.post("/upload/")
 async def upload_document(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith((".pdf", ".csv", ".xlsx", ".txt")):
-        raise HTTPException(status_code=400, detail="Solo se admiten PDFs, CSVs, TXTs y XLSXs")
+    # 1. LIMPIAR EL NOMBRE DEL ARCHIVO (Para evitar el error de las carpetas)
+    nombre_archivo = file.filename.replace('\\', '/').split('/')[-1]
 
-    nombre_limpio = os.path.basename(file.filename)
-    file_path = os.path.join(UPLOAD_DIR, nombre_limpio)
-    
+    if not nombre_archivo.lower().endswith((".pdf", ".csv", ".xlsx", ".txt")):
+        raise HTTPException(status_code=400, detail="Formato no soportado")
+
+    # 2. LEER EL ARCHIVO EN MEMORIA PARA CALCULAR PESO Y HASH
+    file_content = await file.read()
+    peso_bytes = len(file_content)
+    hash_md5 = hashlib.md5(file_content).hexdigest()
+
+    # 3. SISTEMA ANTI-DUPLICADOS
+    conn = sqlite3.connect("documentos.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM documentos WHERE hash_md5 = ?", (hash_md5,))
+    duplicado = cursor.fetchone()
+
+    if duplicado:
+        conn.close()
+        return {"mensaje": "Documento duplicado omitido", "id": duplicado[0], "duplicado": True}
+
+    # 4. SI NO ES DUPLICADO, LO GUARDAMOS EN DISCO
+    file_path = os.path.join(UPLOAD_DIR, nombre_archivo)
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(file_content)
 
     texto_extraido = ""
-    tipo = file.filename.split('.')[-1].lower()
+    tipo = nombre_archivo.split('.')[-1].lower()
 
     try:
         if tipo == "pdf":
@@ -97,115 +96,101 @@ async def upload_document(file: UploadFile = File(...)):
         elif tipo == "xlsx":
             df = pd.read_excel(file_path)
             texto_extraido = df.to_string(index=False)
-        elif tipo == "docx":
-            doc = docx.Document(file_path)
-            texto_extraido = " ".join([parrafo.text for parrafo in doc.paragraphs])
     except Exception as e:
-        print(f"Error leyendo archivo: {e}")
+        print(f"Error extrayendo texto: {e}")
 
-    conn = sqlite3.connect("documentos.db")
-    cursor = conn.cursor()
-
+    # Guardamos en la Base de Datos usando el nombre limpio
     cursor.execute(
-        "INSERT INTO documentos (titulo, tipo, ruta, contenido_original) VALUES (?, ?, ?, ?)",
-        (file.filename, tipo, file_path, texto_extraido)
+        "INSERT INTO documentos (titulo, tipo, ruta, contenido_original, peso, hash_md5) VALUES (?, ?, ?, ?, ?, ?)",
+        (nombre_archivo, tipo, file_path, texto_extraido, peso_bytes, hash_md5)
     )
     doc_id = cursor.lastrowid
-
-    # Generar el embedding con la IA (cortamos a 3000 caracteres para no saturar el modelo ligero)
-    texto_para_ia = texto_extraido[:3000] if texto_extraido else "documento vacio"
-    vector = modelo_ia.encode(texto_para_ia).tolist()
-
-    # Guardar en ChromaDB
-    coleccion_vectores.add(
-        embeddings=[vector],
-        documents=[texto_para_ia],
-        metadatas=[{"titulo": file.filename, "tipo": tipo, "id_sqlite": doc_id}],
-        ids=[str(doc_id)] # Usamos el ID de SQLite para vincularlos
-    )
-
     conn.commit()
     conn.close()
 
-    return {"mensaje": "Documento subido e indexado con éxito", "id": doc_id}
+    # Guardamos en ChromaDB (IA Vectorial)
+    if texto_extraido.strip():
+        chunk = texto_extraido[:8000]
+        coleccion_vectores.add(
+            documents=[chunk],
+            metadatas=[{"id_sqlite": doc_id, "titulo": nombre_archivo, "tipo": tipo}],
+            ids=[str(doc_id)]
+        )
+
+    return {"mensaje": "Subido con éxito", "id": doc_id, "duplicado": False}
 
 @app.delete("/documents/{doc_id}/")
 async def delete_document(doc_id: int):
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-
     cursor.execute("SELECT ruta FROM documentos WHERE id = ?", (doc_id,))
     resultado = cursor.fetchone()
+
     if not resultado:
         conn.close()
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
+        raise HTTPException(status_code=404, detail="No encontrado")
 
     ruta_archivo = resultado[0]
     if os.path.exists(ruta_archivo):
         os.remove(ruta_archivo)
 
     cursor.execute("DELETE FROM documentos WHERE id = ?", (doc_id,))
-    cursor.execute("DELETE FROM indice WHERE documento_id = ?", (doc_id,))
-
     conn.commit()
     conn.close()
 
     try:
         coleccion_vectores.delete(ids=[str(doc_id)])
-    except Exception:
-        pass # Ignorar si no estaba en ChromaDB
+    except:
+        pass
 
-    return {"mensaje": "Documento eliminado con éxito"}
+    return {"mensaje": "Eliminado"}
 
 @app.get("/search/")
 async def search_documents(q: str = "", tipo: str = ""):
-    if not q.strip():
-        return {"total": 0, "resultados": []}
+    if not q.strip(): return {"total": 0, "resultados": []}
+    filtro = {"tipo": tipo.lower()} if tipo.strip() else None
 
-    # 1. Convertir la pregunta del usuario en un vector
-    vector_pregunta = modelo_ia.encode(q).tolist()
+    try:
+        ia_results = coleccion_vectores.query(query_texts=[q], n_results=10, where=filtro)
+        if not ia_results["ids"] or not ia_results["ids"][0]: return {"total": 0, "resultados": []}
 
-    # 2. Configurar el filtro por tipo de archivo (si el usuario lo ha marcado)
-    where_clause = {"tipo": tipo.lower()} if tipo.strip() else None
+        docs = []
+        for i in range(len(ia_results['ids'][0])):
+            metadata = ia_results['metadatas'][0][i]
+            contenido = ia_results['documents'][0][i]
+            distancia = ia_results['distances'][0][i]
 
-    # 3. Buscar en la base de datos vectorial
-    resultados_chroma = coleccion_vectores.query(
-        query_embeddings=[vector_pregunta],
-        n_results=10, # Traer los 10 documentos más relevantes
-        where=where_clause
-    )
-
-    docs = []
-    # ChromaDB devuelve listas dentro de listas, iteramos sobre los resultados
-    if resultados_chroma['ids'] and len(resultados_chroma['ids'][0]) > 0:
-        for i in range(len(resultados_chroma['ids'][0])):
-            doc_id = resultados_chroma['ids'][0][i]
-            metadata = resultados_chroma['metadatas'][0][i]
-            contenido = resultados_chroma['documents'][0][i]
-            distancia = resultados_chroma['distances'][0][i] # Qué tan cerca está (menor es mejor en coseno distance)
-            
             porcentaje = max(0, 100 - (distancia * 50))
-            # Podrías filtrar por distancia si quisieras evitar resultados muy malos
-            if porcentaje > 60.0: 
+            if porcentaje > 60.0:
                 docs.append({
                     "id": metadata["id_sqlite"],
                     "titulo": metadata["titulo"],
                     "tipo": metadata["tipo"],
-                    "resumen": contenido[:150] + "..." if contenido else "Sin contenido extraíble",
+                    "resumen": contenido[:150] + "..." if contenido else "Sin contenido",
                     "score": int(porcentaje)
                 })
 
-    return {"total": len(docs), "resultados": docs}
+        # Ordenar por el mejor score de IA
+        docs.sort(key=lambda x: x["score"], reverse=True)
+        return {"total": len(docs), "resultados": docs}
+    except Exception as e:
+        return {"total": 0, "resultados": []}
 
 @app.get("/documents/")
 async def list_documents():
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-
-    cursor.execute("SELECT id, titulo, tipo, ruta FROM documentos ORDER BY id DESC")
+    # NUEVO: Devolvemos el peso y el contenido para hacer el resumen flotante
+    cursor.execute("SELECT id, titulo, tipo, ruta, peso, contenido_original FROM documentos ORDER BY id DESC")
     resultados = cursor.fetchall()
     conn.close()
 
-    docs = [{"id": r[0], "titulo": r[1], "tipo": r[2], "ruta": r[3]} for r in resultados]
-
+    docs = []
+    for r in resultados:
+        contenido = r[5]
+        docs.append({
+            "id": r[0], "titulo": r[1], "tipo": r[2], "ruta": r[3],
+            "peso": r[4] or 0,
+            "resumen": (contenido[:350] + "...") if contenido else "El documento no contiene texto indexable."
+        })
     return {"total": len(docs), "documentos": docs}
