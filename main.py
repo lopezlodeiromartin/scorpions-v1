@@ -5,7 +5,7 @@ import os
 import shutil
 from PyPDF2 import PdfReader
 import pandas as pd
-import hashlib # NUEVO: Para detectar duplicados
+import hashlib
 
 from sentence_transformers import SentenceTransformer
 import chromadb
@@ -34,7 +34,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def init_db():
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-    # NUEVO: Columnas 'peso' y 'hash_md5' añadidas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS documentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,18 +52,15 @@ init_db()
 
 @app.post("/upload/")
 async def upload_document(file: UploadFile = File(...)):
-    # 1. LIMPIAR EL NOMBRE DEL ARCHIVO (Para evitar el error de las carpetas)
     nombre_archivo = file.filename.replace('\\', '/').split('/')[-1]
 
     if not nombre_archivo.lower().endswith((".pdf", ".csv", ".xlsx", ".txt")):
         raise HTTPException(status_code=400, detail="Formato no soportado")
 
-    # 2. LEER EL ARCHIVO EN MEMORIA PARA CALCULAR PESO Y HASH
     file_content = await file.read()
     peso_bytes = len(file_content)
     hash_md5 = hashlib.md5(file_content).hexdigest()
 
-    # 3. SISTEMA ANTI-DUPLICADOS
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM documentos WHERE hash_md5 = ?", (hash_md5,))
@@ -74,7 +70,6 @@ async def upload_document(file: UploadFile = File(...)):
         conn.close()
         return {"mensaje": "Documento duplicado omitido", "id": duplicado[0], "duplicado": True}
 
-    # 4. SI NO ES DUPLICADO, LO GUARDAMOS EN DISCO
     file_path = os.path.join(UPLOAD_DIR, nombre_archivo)
     with open(file_path, "wb") as buffer:
         buffer.write(file_content)
@@ -99,7 +94,6 @@ async def upload_document(file: UploadFile = File(...)):
     except Exception as e:
         print(f"Error extrayendo texto: {e}")
 
-    # Guardamos en la Base de Datos usando el nombre limpio
     cursor.execute(
         "INSERT INTO documentos (titulo, tipo, ruta, contenido_original, peso, hash_md5) VALUES (?, ?, ?, ?, ?, ?)",
         (nombre_archivo, tipo, file_path, texto_extraido, peso_bytes, hash_md5)
@@ -108,7 +102,6 @@ async def upload_document(file: UploadFile = File(...)):
     conn.commit()
     conn.close()
 
-    # Guardamos en ChromaDB (IA Vectorial)
     if texto_extraido.strip():
         chunk = texto_extraido[:8000]
         coleccion_vectores.add(
@@ -170,7 +163,6 @@ async def search_documents(q: str = "", tipo: str = ""):
                     "score": int(porcentaje)
                 })
 
-        # Ordenar por el mejor score de IA
         docs.sort(key=lambda x: x["score"], reverse=True)
         return {"total": len(docs), "resultados": docs}
     except Exception as e:
@@ -180,7 +172,6 @@ async def search_documents(q: str = "", tipo: str = ""):
 async def list_documents():
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
-    # NUEVO: Devolvemos el peso y el contenido para hacer el resumen flotante
     cursor.execute("SELECT id, titulo, tipo, ruta, peso, contenido_original FROM documentos ORDER BY id DESC")
     resultados = cursor.fetchall()
     conn.close()
