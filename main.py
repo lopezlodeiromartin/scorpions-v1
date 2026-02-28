@@ -1,18 +1,17 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware  # ¡Faltaba importar esto!
+from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import os
 import shutil
 from PyPDF2 import PdfReader
+import pandas as pd
 import re
 
-# 1. ¡PRIMERO SE CREA LA APP!
 app = FastAPI(title="Hackathon Doc API")
 
-# 2. ¡LUEGO SE LE AÑADE EL CORS!
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite que el frontend en localhost:3000 se conecte
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,16 +50,15 @@ def init_db():
 init_db()
 
 def limpiar_y_extraer_palabras(texto):
-    texto_limpio = re.sub(r'[^\w\s]', '', texto.lower())
+    texto_limpio = re.sub(r'[^\w\s]', '', str(texto).lower())
     palabras = texto_limpio.split()
     palabras_utiles = set([p for p in palabras if len(p) > 3])
     return palabras_utiles
 
 @app.post("/upload/")
 async def upload_document(file: UploadFile = File(...)):
-    # FIX: Se usa una TUPLA (), no una lista []
-    if not file.filename.endswith((".pdf", ".csv", ".xlsx")):
-        raise HTTPException(status_code=400, detail="Solo se admiten PDFs, CSVs y XLSXs")
+    if not file.filename.lower().endswith((".pdf", ".csv", ".xlsx", ".txt")):
+        raise HTTPException(status_code=400, detail="Solo se admiten PDFs, CSVs, TXTs y XLSXs")
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
@@ -69,12 +67,20 @@ async def upload_document(file: UploadFile = File(...)):
     texto_extraido = ""
     tipo = file.filename.split('.')[-1].lower()
 
-    # FIX: Solo intentamos leer como PDF si realmente es un PDF
     try:
         if tipo == "pdf":
             reader = PdfReader(file_path)
             for page in reader.pages:
-                texto_extraido += page.extract_text() + " "
+                texto_extraido += (page.extract_text() or "") + " "
+        elif tipo == "txt":
+            with open(file_path, "r", encoding="utf-8") as f:
+                texto_extraido = f.read()
+        elif tipo == "csv":
+            df = pd.read_csv(file_path)
+            texto_extraido = df.to_string(index=False)
+        elif tipo == "xlsx":
+            df = pd.read_excel(file_path)
+            texto_extraido = df.to_string(index=False)
     except Exception as e:
         print(f"Error leyendo archivo: {e}")
 
@@ -104,22 +110,35 @@ async def search_documents(q: str = ""):
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
 
-    # FIX: Me traigo el contenido original para usarlo como resumen
-    query = "SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE 1=1"
-    parametros = []
+    if not q.strip():
+        conn.close()
+        return {"total": 0, "resultados": []}
 
-    if q.strip():
-        palabras = q.split()
-        for palabra in palabras:
-            # FIX: La columna se llama contenido_original, no contenido
-            query += " AND (titulo LIKE ? OR contenido_original LIKE ?)"
-            parametros.extend([f"%{palabra}%", f"%{palabra}%"])
+    palabras_busqueda = re.sub(r'[^\w\s]', '', q.lower()).split()
+    palabras_busqueda = [p for p in palabras_busqueda if len(p) > 3]
+    
+    sets_de_documentos = []
+    for palabra in palabras_busqueda:
+        cursor.execute("SELECT documento_id FROM indice WHERE palabra LIKE ?", (f"{palabra}%",))
+        doc_ids = set([fila[0] for fila in cursor.fetchall()])
+        sets_de_documentos.append(doc_ids)
+        
+    if not sets_de_documentos or not all(sets_de_documentos):
+        conn.close()
+        return {"total": 0, "resultados": []}
+        
+    ids_comunes = set.intersection(*sets_de_documentos)
+    if not ids_comunes:
+        conn.close()
+        return {"total": 0, "resultados": []}
 
-    cursor.execute(query, parametros)
+    placeholders = ",".join("?" * len(ids_comunes))
+    query = f"SELECT id, titulo, tipo, ruta, contenido_original FROM documentos WHERE id IN ({placeholders})"
+    cursor.execute(query, list(ids_comunes))
     resultados = cursor.fetchall()
+
     conn.close()
 
-    # FIX: Añado el "resumen" al JSON para que nuestro Frontend React no dé errores y pinte algo bonito
     docs = [
         {
             "id": r[0],
