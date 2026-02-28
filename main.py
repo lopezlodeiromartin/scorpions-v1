@@ -4,7 +4,6 @@ import sqlite3
 import os
 import shutil
 
-# --- IMPORTAMOS TU TRABAJO (SEBAS) ---
 from processor import extraer_texto_archivo, limpiar_texto
 from indexer import indexar_documento, buscar_en_indice
 
@@ -49,14 +48,12 @@ async def upload_document(file: UploadFile = File(...)):
 
     tipo = file.filename.split('.')[-1].lower()
 
-    # 1. USAMOS TU PROCESSOR.PY PARA EXTRAER Y LIMPIAR
     texto_bruto = extraer_texto_archivo(file_path)
     texto_extraido = limpiar_texto(texto_bruto)
 
     if not texto_extraido:
         raise HTTPException(status_code=400, detail="No se pudo extraer texto del documento")
 
-    # 2. GUARDAMOS EN SQLITE (Solo para el listado del frontend)
     conn = sqlite3.connect("documentos.db")
     cursor = conn.cursor()
     cursor.execute(
@@ -67,7 +64,6 @@ async def upload_document(file: UploadFile = File(...)):
     conn.commit()
     conn.close()
 
-    # 3. USAMOS TU INDEXER.PY PARA EL MOTOR DE BÚSQUEDA
     indexar_documento(doc_id, file.filename, texto_extraido, tipo)
 
     return {"mensaje": "Documento subido e indexado con éxito", "id": doc_id}
@@ -77,16 +73,14 @@ async def search_documents(q: str = ""):
     if not q.strip():
         return {"total": 0, "resultados": []}
 
-    # USAMOS TU BUSCADOR WHOOSH (Súper rápido y con relevancia)
     resultados_whoosh = buscar_en_indice(q)
 
-    # Adaptamos los datos para que el Frontend de Saúl los muestre perfectos
     docs = [
         {
             "id": r["id"],
             "titulo": r["titulo"],
             "tipo": r["tipo"],
-            "resumen": r["resumen"] # ¡Aquí va tu resumen automático!
+            "resumen": r["resumen"]
         }
         for r in resultados_whoosh
     ]
